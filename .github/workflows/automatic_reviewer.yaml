@@ -1,0 +1,91 @@
+name: Code Review Inline with Gemini
+
+on:
+  pull_request:
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up dependencies
+        run: |
+          sudo apt-get install jq -y
+          gh auth setup-git
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract inline diffs
+        run: |
+          mkdir -p diffs
+          git fetch origin ${{ github.event.pull_request.base.ref }}
+          git fetch origin ${{ github.event.pull_request.head.ref }}
+          git diff origin/${{ github.event.pull_request.base.ref }} origin/${{ github.event.pull_request.head.ref }} > full_diff.patch
+          
+          # Split by file and track changed lines (basic line mapping)
+          awk '
+            /^diff --git/ { 
+              if (out) close(out)
+              file = substr($3, 3)
+              out = "diffs/" file ".diff"
+              next
+            }
+            out { print >> out }
+          ' full_diff.patch
+
+      - name: Gemini Inline Review Script
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          for diff_file in $(find diffs -name "*.diff"); do
+            file_path="${diff_file#diffs/}"
+            file_path="${file_path%.diff}"
+
+            # Get changed lines (simple heuristic: starts with '+', not '+++')
+            grep "^+[^+]" "$diff_file" | sed 's/^+//' > tmp_added_lines.txt
+            mapfile -t added_lines < tmp_added_lines.txt
+
+            index=1
+            while IFS= read -r line; do
+              # Create prompt
+              prompt="Você é um revisor de código. Analise esta linha no arquivo \`$file_path\` e sugira melhorias ou identifique problemas.\n\nLinha:\n$line"
+
+              response=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}" \
+                -H "Content-Type: application/json" \
+                -d '{
+                      "contents": [
+                        {
+                          "parts": [
+                            { "text": "'"$prompt"'" }
+                          ]
+                        }
+                      ]
+                    }')
+
+              feedback=$(echo "$response" | jq -r '.candidates[0].content.parts[0].text')
+
+              if [ "$feedback" != "null" ] && [ -n "$feedback" ] && [ "$feedback" != "" ]; then
+                echo "Comentando sobre $file_path linha $index"
+
+                gh api \
+                  -X POST \
+                  /repos/$REPO/pulls/$PR_NUMBER/comments \
+                  -F body="💡 **Sugestão da IA (linha $index em \`$file_path\`)**: $feedback" \
+                  -F commit_id="$COMMIT_SHA" \
+                  -F path="$file_path" \
+                  -F side="RIGHT" \
+                  -F line="$index"
+              fi
+
+              index=$((index + 1))
+            done < tmp_added_lines.txt
+          done
