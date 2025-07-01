@@ -41,7 +41,7 @@ jobs:
       - name: Gemini Inline Review Script
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GIT_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
           COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
