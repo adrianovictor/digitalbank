@@ -72,14 +72,8 @@ jobs:
               if [ "$feedback" != "null" ] && [ -n "$feedback" ] && [ "$feedback" != "" ]; then
                 echo "Comentando sobre $file_path linha $index"
 
-                gh api \
-                  -X POST \
-                  /repos/$REPO/pulls/$PR_NUMBER/comments \
-                  -F body="💡 **Sugestão da IA (linha $index em \`$file_path\`)**: $feedback" \
-                  -F commit_id="$COMMIT_SHA" \
-                  -F path="$file_path" \
-                  -F side="RIGHT" \
-                  -F line="$index"
+                gh pr comment "$PR_NUMBER" \
+                --body "💡 **Sugestão para o arquivo \`$file_path\`:**\n\n$feedback"
               fi
 
               index=$((index + 1))
