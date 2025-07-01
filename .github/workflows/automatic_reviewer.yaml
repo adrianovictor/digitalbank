@@ -25,19 +25,14 @@ jobs:
           mkdir -p diffs
           git fetch origin ${{ github.event.pull_request.base.ref }}
           git fetch origin ${{ github.event.pull_request.head.ref }}
-          git diff origin/${{ github.event.pull_request.base.ref }} origin/${{ github.event.pull_request.head.ref }} > full_diff.patch
+
+          files=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }} origin/${{ github.event.pull_request.head.ref }})
           
-          awk '
-            /^diff --git/ {
-              if (out) close(out)
-              file = substr($3, 3)
-              out = "diffs/" file ".diff"
-              cmd = "mkdir -p \"" dirname(out) "\""
-              system(cmd)
-              next
-            }
-            out { print >> out }
-          ' full_diff.patch
+          for file in $files; do
+            dir="diffs/$(dirname "$file")"
+            mkdir -p "$dir"
+            git diff origin/${{ github.event.pull_request.base.ref }} origin/${{ github.event.pull_request.head.ref }} -- "$file" > "$dir/$(basename "$file").diff"
+          done
 
       - name: Gemini Inline Review Script
         env:
