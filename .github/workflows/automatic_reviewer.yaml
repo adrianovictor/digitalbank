@@ -53,7 +53,26 @@ jobs:
             index=1
             while IFS= read -r line; do
               # Create prompt
-              prompt="Você é um revisor de código. Analise esta linha no arquivo \`$file_path\` e sugira melhorias ou identifique problemas.\n\nLinha:\n$line"
+              prompt="Você é um revisor de código experiente. Analise a seguinte linha do arquivo \`$file_path\`:
+
+                $line
+
+                Comente apenas se encontrar algo com impacto relevante, como:
+                - bugs
+                - falhas de lógica
+                - violação de boas práticas críticas
+                - problemas de segurança
+                - problemas de performance
+                - inconsistência com o estilo do projeto
+
+                Evite sugestões genéricas, estéticas ou irrelevantes.
+
+                Responda com a estrutura:
+
+                Severidade: [Alta, Média, Baixa]  
+                Sugestão: [descrição clara e objetiva da sugestão]
+
+                Responda sempre em português brasileiro."
 
               response=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}" \
                 -H "Content-Type: application/json" \
