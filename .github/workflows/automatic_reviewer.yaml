@@ -27,12 +27,13 @@ jobs:
           git fetch origin ${{ github.event.pull_request.head.ref }}
           git diff origin/${{ github.event.pull_request.base.ref }} origin/${{ github.event.pull_request.head.ref }} > full_diff.patch
           
-          # Split by file and track changed lines (basic line mapping)
           awk '
-            /^diff --git/ { 
+            /^diff --git/ {
               if (out) close(out)
               file = substr($3, 3)
               out = "diffs/" file ".diff"
+              cmd = "mkdir -p \"" dirname(out) "\""
+              system(cmd)
               next
             }
             out { print >> out }
