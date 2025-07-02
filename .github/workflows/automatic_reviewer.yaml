@@ -25,18 +25,14 @@ jobs:
           mkdir -p diffs
           git fetch origin ${{ github.event.pull_request.base.ref }}
           git fetch origin ${{ github.event.pull_request.head.ref }}
-          git diff origin/${{ github.event.pull_request.base.ref }} origin/${{ github.event.pull_request.head.ref }} > full_diff.patch
+
+          files=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }} origin/${{ github.event.pull_request.head.ref }})
           
-          # Split by file and track changed lines (basic line mapping)
-          awk '
-            /^diff --git/ { 
-              if (out) close(out)
-              file = substr($3, 3)
-              out = "diffs/" file ".diff"
-              next
-            }
-            out { print >> out }
-          ' full_diff.patch
+          for file in $files; do
+            dir="diffs/$(dirname "$file")"
+            mkdir -p "$dir"
+            git diff origin/${{ github.event.pull_request.base.ref }} origin/${{ github.event.pull_request.head.ref }} -- "$file" > "$dir/$(basename "$file").diff"
+          done
 
       - name: Gemini Inline Review Script
         env:
@@ -57,7 +53,26 @@ jobs:
             index=1
             while IFS= read -r line; do
               # Create prompt
-              prompt="Você é um revisor de código. Analise esta linha no arquivo \`$file_path\` e sugira melhorias ou identifique problemas.\n\nLinha:\n$line"
+              prompt="Você é um revisor de código experiente. Analise a seguinte linha do arquivo \`$file_path\`:
+
+                $line
+
+                Comente apenas se encontrar algo com impacto relevante, como:
+                - bugs
+                - falhas de lógica
+                - violação de boas práticas críticas
+                - problemas de segurança
+                - problemas de performance
+                - inconsistência com o estilo do projeto
+
+                Evite sugestões genéricas, estéticas ou irrelevantes.
+
+                Responda com a estrutura:
+
+                Severidade: [Alta, Média, Baixa]  
+                Sugestão: [descrição clara e objetiva da sugestão]
+
+                Responda sempre em português brasileiro."
 
               response=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}" \
                 -H "Content-Type: application/json" \
@@ -76,14 +91,8 @@ jobs:
               if [ "$feedback" != "null" ] && [ -n "$feedback" ] && [ "$feedback" != "" ]; then
                 echo "Comentando sobre $file_path linha $index"
 
-                gh api \
-                  -X POST \
-                  /repos/$REPO/pulls/$PR_NUMBER/comments \
-                  -F body="💡 **Sugestão da IA (linha $index em \`$file_path\`)**: $feedback" \
-                  -F commit_id="$COMMIT_SHA" \
-                  -F path="$file_path" \
-                  -F side="RIGHT" \
-                  -F line="$index"
+                gh pr comment "$PR_NUMBER" \
+                --body "💡 **Sugestão para o arquivo \`$file_path\`:**\n\n$feedback"
               fi
 
               index=$((index + 1))
